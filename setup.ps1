@@ -1,6 +1,11 @@
-﻿Function Parse-IniFile ($file) {
+﻿param(
+    [Parameter(Mandatory=$True, Position=0, ValueFromPipeline=$false)]
+    [System.String]
+    $ConfigPath
+)
+
+Function ReadConfigFile ($file) {
   $ini = @{}
-  # Create a default section if none exist in the file. Like a java prop file.
   $section = "NO_SECTION"
   $ini[$section] = @{}
   switch -regex -file $file {
@@ -10,7 +15,6 @@
     }
     "^\s*([^#].+?)\s*=\s*(.*)" {
       $name,$value = $matches[1..2]
-      # skip comments that start with semicolon:
       if (!($name.StartsWith(";"))) {
         $ini[$section][$name] = $value.Trim()
       }
@@ -19,17 +23,15 @@
   $ini
 }
 
-$config = Parse-IniFile $PSScriptRoot"\config\config.ini"
-
+$config = ReadConfigFile $PSScriptRoot"\"$ConfigPath
+$FullConnectionName = $config.connection.name + "_" + $config.connection.type.ToUpper()
 $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
 $caPath = $scriptPath + "\" + $config.ca.file_name
 $crtPath = $scriptPath + "\" + $config.crt.file_name
 
 
-
-
 $connectionParams = @{
-    Name = $config.connection.name + "_" + $config.connection.type.ToUpper()
+    Name = $FullConnectionName
     ServerAddress = $config.connection.address
     TunnelType = $config.connection.type
     EncryptionLevel = $config.connection.EncryptionLevel
@@ -40,7 +42,14 @@ $connectionParams = @{
     AllUserConnection=[System.Convert]::ToBoolean($config.connection.AllUserConnection)
     UseWinlogonCredential=[System.Convert]::ToBoolean($config.connection.UseWinlogonCredential)
 }
-
+<# Только для L2TP#>
+if ($config.connection.type -eq "L2tp") {
+  if ($config.connection.L2tpPsk) {
+      $connectionParams += @{
+          L2tpPsk = $config.connection.L2tpPsk
+      }
+  }
+}
 try {
 
     $caParams = @{
@@ -62,7 +71,14 @@ catch {
 
 
 try {
-    Add-VpnConnection @connectionParams
+    Add-VpnConnection @connectionParams -force
+    <# Добавление маршрутов #>
+    if ($config.connection.DestinationPrefix) {
+        $DestinationPrefixes = $config.connection.DestinationPrefix.Split(",")
+        foreach ($DestinationPrefix in $DestinationPrefixes) {
+            Add-VpnConnectionRoute -ConnectionName $FullConnectionName -DestinationPrefix $DestinationPrefix –PassThru
+        }
+    }
 }
 catch {
     Write-Host("ОШИБКА!!!")

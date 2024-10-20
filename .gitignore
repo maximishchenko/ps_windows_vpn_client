@@ -1,4 +1,6 @@
-/**/config.ini
+/**/ikev2.ini
+/**/l2tp.ini
+/**/sstp.ini
 /**/*.crt
 /**/*.key
 /**/*.p12
